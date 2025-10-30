@@ -1,0 +1,31 @@
+{
+  "tests": [
+    {
+      "name": "Get user data",
+      "method": "GET",
+      "path": "/?userId=TEST123",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "user": {
+          "user_id": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Top-up balance",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "topup",
+        "userId": "TEST123",
+        "amount": 1000
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "success": true
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

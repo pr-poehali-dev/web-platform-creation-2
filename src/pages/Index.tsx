@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,20 +9,53 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 
+const API_URL = 'https://functions.poehali.dev/4ee0098d-e446-453c-a5c1-294b06ce09f1';
+
 export default function Index() {
   const [activeTab, setActiveTab] = useState('card');
   const [balance, setBalance] = useState(0);
+  const [cardEarnings, setCardEarnings] = useState(0);
+  const [referralEarnings, setReferralEarnings] = useState(0);
+  const [referralCount, setReferralCount] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
   const [menuSection, setMenuSection] = useState('');
-  const [userId] = useState('USER' + Math.random().toString(36).substr(2, 9).toUpperCase());
+  const [userId] = useState(() => {
+    const stored = localStorage.getItem('userId');
+    if (stored) return stored;
+    const newId = 'USER' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    localStorage.setItem('userId', newId);
+    return newId;
+  });
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawPhone, setWithdrawPhone] = useState('');
   const [withdrawBank, setWithdrawBank] = useState('');
   const [topupAmount, setTopupAmount] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const referralLink = `https://alfacard.poehali.dev/ref/${userId}`;
 
-  const handleWithdraw = () => {
+  useEffect(() => {
+    fetchUserData();
+  }, []);
+
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch(`${API_URL}?userId=${userId}`);
+      const data = await response.json();
+      
+      if (data.user) {
+        setBalance(parseFloat(data.user.balance));
+        setCardEarnings(parseFloat(data.user.card_earnings));
+        setReferralEarnings(parseFloat(data.user.referral_earnings));
+        setReferralCount(data.referralCount || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      toast.error('Ошибка загрузки данных');
+    }
+  };
+
+  const handleWithdraw = async () => {
     if (!withdrawAmount || !withdrawPhone || !withdrawBank) {
       toast.error('Заполните все поля');
       return;
@@ -31,23 +64,74 @@ export default function Index() {
       toast.error('Недостаточно средств');
       return;
     }
-    toast.success('Заявка на вывод отправлена! Ожидайте поступления средств.');
-    setBalance(balance - Number(withdrawAmount));
-    setWithdrawAmount('');
-    setWithdrawPhone('');
-    setWithdrawBank('');
+    
+    setLoading(true);
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'withdraw',
+          userId,
+          amount: Number(withdrawAmount),
+          phone: withdrawPhone,
+          bank: withdrawBank
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success('Заявка на вывод отправлена!');
+        await fetchUserData();
+        setWithdrawAmount('');
+        setWithdrawPhone('');
+        setWithdrawBank('');
+      } else {
+        toast.error(data.error || 'Ошибка вывода');
+      }
+    } catch (error) {
+      toast.error('Ошибка при выводе средств');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleTopup = () => {
+  const handleTopup = async () => {
     if (!topupAmount) {
       toast.error('Укажите сумму пополнения');
       return;
     }
+    
     toast.info('Переведите ' + topupAmount + ' ₽ на номер 89069892267. У вас 5 минут.');
-    setTimeout(() => {
-      toast.success('Баланс пополнен на ' + topupAmount + ' ₽');
-      setBalance(balance + Number(topupAmount));
-      setTopupAmount('');
+    
+    setTimeout(async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'topup',
+            userId,
+            amount: Number(topupAmount)
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          toast.success('Баланс пополнен на ' + topupAmount + ' ₽');
+          await fetchUserData();
+          setTopupAmount('');
+        } else {
+          toast.error(data.error || 'Ошибка пополнения');
+        }
+      } catch (error) {
+        toast.error('Ошибка при пополнении');
+      } finally {
+        setLoading(false);
+      }
     }, 3000);
   };
 
@@ -163,7 +247,7 @@ export default function Index() {
                         </div>
                         <span className="text-sm">Заработок с карт</span>
                       </div>
-                      <span className="font-semibold">0 ₽</span>
+                      <span className="font-semibold">{cardEarnings} ₽</span>
                     </div>
                     
                     <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
@@ -173,7 +257,7 @@ export default function Index() {
                         </div>
                         <span className="text-sm">Реферальная программа</span>
                       </div>
-                      <span className="font-semibold">0 ₽</span>
+                      <span className="font-semibold">{referralEarnings} ₽</span>
                     </div>
                   </div>
                 </CardContent>
@@ -215,11 +299,11 @@ export default function Index() {
                     <p className="font-semibold text-sm">📊 Ваша статистика:</p>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <p className="text-2xl font-bold text-primary">0</p>
+                        <p className="text-2xl font-bold text-primary">{referralCount}</p>
                         <p className="text-xs text-muted-foreground">Приглашено друзей</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold text-secondary">0 ₽</p>
+                        <p className="text-2xl font-bold text-secondary">{referralEarnings} ₽</p>
                         <p className="text-xs text-muted-foreground">Заработано</p>
                       </div>
                     </div>
@@ -283,8 +367,9 @@ export default function Index() {
                     className="w-full bg-gradient-to-r from-accent to-primary"
                     size="lg"
                     onClick={handleWithdraw}
+                    disabled={loading}
                   >
-                    Вывести средства
+                    {loading ? 'Обработка...' : 'Вывести средства'}
                   </Button>
                 </CardContent>
               </Card>
@@ -334,8 +419,9 @@ export default function Index() {
                     className="w-full bg-gradient-to-r from-primary to-secondary"
                     size="lg"
                     onClick={handleTopup}
+                    disabled={loading}
                   >
-                    Я перевёл средства
+                    {loading ? 'Обработка...' : 'Я перевёл средства'}
                   </Button>
                 </CardContent>
               </Card>
