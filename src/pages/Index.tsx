@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import TelegramAuth from '@/components/TelegramAuth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,8 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 
 const API_URL = 'https://functions.poehali.dev/4ee0098d-e446-453c-a5c1-294b06ce09f1';
+const AUTH_API = 'https://functions.poehali.dev/2abe086a-57e0-45bb-87f5-702189437488';
 
 export default function Index() {
+  const navigate = useNavigate();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState('card');
   const [balance, setBalance] = useState(0);
   const [cardEarnings, setCardEarnings] = useState(0);
@@ -19,13 +25,7 @@ export default function Index() {
   const [referralCount, setReferralCount] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
   const [menuSection, setMenuSection] = useState('');
-  const [userId] = useState(() => {
-    const stored = localStorage.getItem('userId');
-    if (stored) return stored;
-    const newId = 'USER' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    localStorage.setItem('userId', newId);
-    return newId;
-  });
+  const [userId, setUserId] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawPhone, setWithdrawPhone] = useState('');
   const [withdrawBank, setWithdrawBank] = useState('');
@@ -35,12 +35,67 @@ export default function Index() {
   const referralLink = `https://alfacard.poehali.dev/ref/${userId}`;
 
   useEffect(() => {
-    fetchUserData();
+    const storedUserId = localStorage.getItem('userId');
+    const telegramUser = localStorage.getItem('telegramUser');
+    
+    if (storedUserId && telegramUser) {
+      setUserId(storedUserId);
+      setIsAuthenticated(true);
+      checkAdmin(storedUserId);
+      fetchUserData(storedUserId);
+    }
   }, []);
 
-  const fetchUserData = async () => {
+  const handleTelegramAuth = async (user: any) => {
     try {
-      const response = await fetch(`${API_URL}?userId=${userId}`);
+      const response = await fetch(AUTH_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'telegram_login',
+          authData: user
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.user) {
+        const newUserId = data.user.user_id;
+        setUserId(newUserId);
+        localStorage.setItem('userId', newUserId);
+        localStorage.setItem('telegramUser', JSON.stringify(user));
+        setIsAuthenticated(true);
+        setIsAdmin(data.user.is_admin || false);
+        toast.success(`Добро пожаловать, ${user.first_name}!`);
+        fetchUserData(newUserId);
+      } else {
+        toast.error('Ошибка авторизации');
+      }
+    } catch (error) {
+      toast.error('Ошибка подключения');
+    }
+  };
+
+  const checkAdmin = async (uid: string) => {
+    try {
+      const response = await fetch(AUTH_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'check_admin', userId: uid })
+      });
+      const data = await response.json();
+      setIsAdmin(data.isAdmin || false);
+    } catch (error) {
+      console.error('Error checking admin status');
+    }
+  };
+
+  const fetchUserData = async (uid?: string) => {
+    const targetUserId = uid || userId;
+    if (!targetUserId) return;
+    
+    try {
+      const response = await fetch(`${API_URL}?userId=${targetUserId}`);
       const data = await response.json();
       
       if (data.user) {
@@ -162,6 +217,29 @@ export default function Index() {
             <Icon name="Menu" size={24} />
           </Button>
         </header>
+
+        {!isAuthenticated ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <Card className="w-full max-w-md border-primary/20 bg-card/50 backdrop-blur-sm">
+              <CardHeader className="text-center">
+                <CardTitle className="text-2xl">Добро пожаловать! 👋</CardTitle>
+                <CardDescription className="text-base">
+                  Войдите через Telegram для доступа к платформе
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-4">
+                <TelegramAuth 
+                  botName="YOUR_BOT_USERNAME" 
+                  onAuth={handleTelegramAuth}
+                />
+                <div className="text-xs text-muted-foreground text-center">
+                  Нет бота? Создайте его через @BotFather<br/>
+                  и добавьте токен в настройки проекта
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
 
         <div className="animate-slide-up">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
@@ -428,8 +506,10 @@ export default function Index() {
             </TabsContent>
           </Tabs>
         </div>
+        )}
       </div>
 
+      {isAuthenticated && (
       <div className="fixed bottom-0 left-0 right-0 bg-card/80 backdrop-blur-lg border-t border-border z-50">
         <TabsList className="w-full h-auto grid grid-cols-5 bg-transparent p-2 gap-1">
           <TabsTrigger
@@ -474,6 +554,7 @@ export default function Index() {
           </TabsTrigger>
         </TabsList>
       </div>
+      )}
 
       <Dialog open={showMenu} onOpenChange={setShowMenu}>
         <DialogContent className="sm:max-w-md">
@@ -515,17 +596,16 @@ export default function Index() {
               <Icon name="TrendingUp" size={20} className="mr-2" />
               Накрутка
             </Button>
-            <Button
-              variant="outline"
-              className="justify-start"
-              onClick={() => {
-                setMenuSection('admin');
-                toast.info('Админ-панель в разработке 🔒');
-              }}
-            >
-              <Icon name="Shield" size={20} className="mr-2" />
-              Управление
-            </Button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                className="justify-start bg-primary/10"
+                onClick={() => navigate('/admin')}
+              >
+                <Icon name="Shield" size={20} className="mr-2" />
+                Админ-панель 🔒
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

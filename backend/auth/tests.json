@@ -1,0 +1,17 @@
+{
+  "tests": [
+    {
+      "name": "Check admin status",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "check_admin",
+        "userId": "TEST123"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "isAdmin": false
+      }
+    }
+  ]
+}

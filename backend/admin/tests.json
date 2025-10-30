@@ -1,0 +1,16 @@
+{
+  "tests": [
+    {
+      "name": "Get stats",
+      "method": "GET",
+      "path": "/?action=stats",
+      "headers": {
+        "X-Admin-Id": "TEST123"
+      },
+      "expectedStatus": 403,
+      "expectedBody": {
+        "error": "Access denied"
+      }
+    }
+  ]
+}
